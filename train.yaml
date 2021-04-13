@@ -2,7 +2,6 @@ run_name: "default"
 
 num_epochs: 600
 batch_size: 64
-batch_split: 1
 samples_per_lif: 4096
 min_context_points: 16
 
@@ -22,7 +21,7 @@ code_length: 29
 
 # Snapshots saving parameters
 snapshot_frequency: 100
-additional_snapshots: [50]
+additional_snapshots: [1, 50]
 
 # SDF samples
 training_loss:

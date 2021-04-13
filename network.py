@@ -46,10 +46,10 @@ class DIEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Conv1d(6, 32, kernel_size=1), nn.BatchNorm1d(32), nn.ReLU(inplace=True),
-            nn.Conv1d(32, 64, kernel_size=1), nn.BatchNorm1d(64), nn.ReLU(inplace=True),
-            nn.Conv1d(64, 256, kernel_size=1), nn.BatchNorm1d(256), nn.ReLU(inplace=True),
-            nn.Conv1d(256, 29, kernel_size=1)
+            nn.Conv1d(6, 32, kernel_size=1, bias=False), nn.BatchNorm1d(32), nn.ReLU(inplace=True),
+            nn.Conv1d(32, 64, kernel_size=1, bias=False), nn.BatchNorm1d(64), nn.ReLU(inplace=True),
+            nn.Conv1d(64, 256, kernel_size=1, bias=False), nn.BatchNorm1d(256), nn.ReLU(inplace=True),
+            nn.Conv1d(256, 29, kernel_size=1, bias=False)
         )
 
     def forward(self, x):
