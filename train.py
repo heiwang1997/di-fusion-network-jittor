@@ -1,4 +1,3 @@
-import importlib
 import json
 import logging
 from pathlib import Path
@@ -10,9 +9,10 @@ import yaml
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
-from dataset.training import lif_dataset as ldata
-from network import criterion
+import lif_dataset as ldata
+import criterion
 from utils import exp_util
+from network import DIDecoder, DIEncoder
 
 
 class TensorboardViz(object):
@@ -34,7 +34,6 @@ class TensorboardViz(object):
 
 
 parser = exp_util.ArgumentParserX(add_hyper_arg=True)
-parser.add_argument('-v', '--visualize', action='store_true', help='Visualize')
 
 
 def main():
@@ -49,13 +48,11 @@ def main():
 
     lr_schedules = lr_schedule.get_learning_rate_schedules(args)
 
-    net_module = importlib.import_module("network." + args.network_name)
-    model = net_module.Model(args.code_length, **args.network_specs).cuda()
+    model = DIDecoder(args.code_length, **args.network_specs).cuda()
     model = torch.nn.DataParallel(model)
 
-    encoder_module = importlib.import_module("network." + args.encoder_name)
     args.encoder_specs.update({"latent_size": args.code_length})
-    encoder = encoder_module.Model(**args.encoder_specs, mode='train').cuda()
+    encoder = DIEncoder(**args.encoder_specs, mode='train').cuda()
     encoder = torch.nn.DataParallel(encoder)
 
     lif_dataset = ldata.LifCombinedDataset(*[
@@ -110,23 +107,6 @@ def main():
         batch_bar = tqdm.tqdm(total=len(lif_loader), leave=False, desc='train')
 
         for sdf_data, surface_data, idx in lif_loader:
-
-            # if args.visualize:
-            #     print(sdf_data.size(), surface_data.size())
-            #     # Visualize training data.
-            #     from pycg import vis
-            #     vis_xyz = sdf_data[0, :, :3].numpy()
-            #     vis_sdf = sdf_data[0, :, 3:].numpy()
-            #     if vis_sdf.shape[1] == 1:
-            #         input_pcd = vis.pointcloud(vis_xyz, cfloat=vis_sdf[:, 0])
-            #     else:
-            #         input_pcd = vis.pointcloud(vis_xyz, normal=vis_sdf)
-            #     vis.show_3d([input_pcd,
-            #                   vis.pointcloud(surface_data[0, :, :3].numpy(), normal=surface_data[0, :, 3:6].numpy(), is_sphere=True),
-            #                   vis.pointcloud(surface_data[0, :, :3].numpy(), normal=surface_data[0, :, 3:6].numpy()),
-            #                   vis.wireframe_bbox([-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]),
-            #                   vis.wireframe_bbox([-1.0, -1.0, -1.0], [1.0, 1.0, 1.0])])
-
             # Process the input data
             sdf_data = sdf_data.reshape(-1, sdf_data.size(-1)).cuda()
             surface_data = surface_data.cuda()      # (B, N, 6)
