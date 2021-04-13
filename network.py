@@ -4,110 +4,56 @@ import torch.nn.functional as F
 
 
 class DIDecoder(nn.Module):
-    def __init__(self, latent_size, dims, dropout=None, dropout_prob=0.0, norm_layers=(), latent_in=(), weight_norm=False):
-        """
-        :param latent_size: Size of the latent vector
-        :param dims:        Intermediate network neurons
-        :param dropout:
-        :param dropout_prob:
-        :param latent_in:   From which layer to re-feed in the latent_size+3 input vector
-        :param weight_norm: Whether to use weight normalization
-        :param norm_layers: Layers to append normalization (Either WeightNorm or LayerNorm depend of weight_norm var)
-        """
+    def __init__(self):
         super().__init__()
-
-        dims = [latent_size + 3] + dims + [1]
-
-        self.num_layers = len(dims)
-        self.norm_layers = norm_layers
-        self.latent_in = latent_in
-        self.weight_norm = weight_norm
-
-        for layer in range(self.num_layers - 1):
-            # a linear layer with input `dims[layer]` and output `dims[layer + 1]`.
-            # If the next layer is going to take latent vec, we reduce output of this layer.
-            if layer + 1 in latent_in:
-                out_dim = dims[layer + 1] - dims[0]
-            else:
-                out_dim = dims[layer + 1]
-
-            if weight_norm and layer in self.norm_layers:
-                setattr(self, "lin" + str(layer),
-                    nn.utils.weight_norm(nn.Linear(dims[layer], out_dim)),
-                )
-            else:
-                setattr(self, "lin" + str(layer), nn.Linear(dims[layer], out_dim))
-
-            if (not weight_norm) and self.norm_layers is not None and layer in self.norm_layers:
-                setattr(self, "bn" + str(layer), nn.LayerNorm(out_dim))
-
-        self.uncertainty_layer = nn.Linear(dims[-2], 1)
-
+        self.lin0 = nn.utils.weight_norm(nn.Linear(32, 128))
+        self.lin1 = nn.utils.weight_norm(nn.Linear(128, 128))
+        self.lin2 = nn.utils.weight_norm(nn.Linear(128, 128 - 32))
+        self.lin3 = nn.utils.weight_norm(nn.Linear(128, 128))
+        self.lin4 = nn.utils.weight_norm(nn.Linear(128, 1))
+        self.uncertainty_layer = nn.Linear(128, 1)
         self.relu = nn.ReLU()
-        self.dropout_prob = dropout_prob
-        self.dropout = dropout
+        self.dropout = [0, 1, 2, 3, 4, 5]
         self.th = nn.Tanh()
 
-    # input: N x (L+3)
-    def forward(self, input):
-        x = input
-        std = None
+    def forward(self, ipt):
+        x = self.lin0(ipt)
+        x = self.relu(x)
+        x = F.dropout(x, p=0.2, training=True)
 
-        for layer in range(0, self.num_layers - 1):
-            lin = getattr(self, "lin" + str(layer))
-            if layer in self.latent_in:
-                x = torch.cat([x, input], 1)
+        x = self.lin1(x)
+        x = self.relu(x)
+        x = F.dropout(x, p=0.2, training=True)
 
-            # For the last layer, also branch out to output uncertainty.
-            if layer == self.num_layers - 2:
-                std = self.uncertainty_layer(x)
-                # std = 0.1 + 0.9 * F.softplus(std)
-                std = 0.05 + 0.5 * F.softplus(std)
+        x = self.lin2(x)
+        x = self.relu(x)
+        x = F.dropout(x, p=0.2, training=True)
 
-            x = lin(x)
+        x = torch.cat([x, ipt], 1)
+        x = self.lin3(x)
+        x = self.relu(x)
+        x = F.dropout(x, p=0.2, training=True)
 
-            # For all layers other than the last layer.
-            if layer < self.num_layers - 2:
-                if (
-                        self.norm_layers is not None
-                        and layer in self.norm_layers
-                        and not self.weight_norm
-                ):
-                    bn = getattr(self, "bn" + str(layer))
-                    x = bn(x)
-                x = self.relu(x)
-                if self.dropout is not None and layer in self.dropout:
-                    x = F.dropout(x, p=self.dropout_prob, training=self.training)
+        std = self.uncertainty_layer(x)
+        std = 0.05 + 0.5 * F.softplus(std)
+        x = self.lin4(x)
         x = self.th(x)
 
         return x, std
 
 
 class DIEncoder(nn.Module):
-    def __init__(self, bn, latent_size, per_point_feat, mode='cnp'):
+    def __init__(self):
         super().__init__()
-        assert mode in ['train', 'cnp']
-        self.mode = mode
-        self.aggr_mode = 'mean'
-        self.mlp = SharedMLP(per_point_feat + [latent_size], bn=bn, last_act=False)
+        self.mlp = nn.Sequential(
+            nn.Conv1d(6, 32, kernel_size=1), nn.BatchNorm1d(32), nn.ReLU(inplace=True),
+            nn.Conv1d(32, 64, kernel_size=1), nn.BatchNorm1d(64), nn.ReLU(inplace=True),
+            nn.Conv1d(64, 256, kernel_size=1), nn.BatchNorm1d(256), nn.ReLU(inplace=True),
+            nn.Conv1d(256, 29, kernel_size=1)
+        )
 
     def forward(self, x):
-        if self.mode == 'train':
-            # B x N x 3 -> B x latent_size
-            x = x.transpose(-1, -2)
-            x = self.mlp(x)     # (B, L, N)
-            if self.aggr_mode == 'max':
-                r, _ = torch.max(x, dim=-1)
-            elif self.aggr_mode == 'mean':
-                r = torch.mean(x, dim=-1)
-            else:
-                raise NotImplementedError
-            return r
-        elif self.mode == 'cnp':
-            # B x 3 -> B x latent_size
-            x = x.unsqueeze(-1)     # (B, 3, 1)
-            x = self.mlp(x)         # (B, L, 1)
-            return x.squeeze(-1)
-        else:
-            raise NotImplementedError
-
+        x = x.transpose(-1, -2)
+        x = self.mlp(x)     # (B, L, N)
+        r = torch.mean(x, dim=-1)
+        return r

@@ -20,20 +20,6 @@ train_set:
 code_bound: null
 code_length: 29
 
-# Decoder specification
-network_specs:
-  dims: [ 128, 128, 128, 128 ]
-  dropout: [0, 1, 2, 3, 4, 5]
-  dropout_prob: 0.2
-  norm_layers: [0, 1, 2, 3, 4, 5]
-  latent_in: [3]
-  weight_norm: true
-
-# Encoder specification
-encoder_specs:
-  per_point_feat: [ 6, 32, 64, 256 ]
-  bn: {"class": "BatchNorm"}
-
 # Snapshots saving parameters
 snapshot_frequency: 100
 additional_snapshots: [50]

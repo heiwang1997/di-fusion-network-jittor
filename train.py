@@ -48,11 +48,10 @@ def main():
 
     lr_schedules = lr_schedule.get_learning_rate_schedules(args)
 
-    model = DIDecoder(args.code_length, **args.network_specs).cuda()
+    model = DIDecoder().cuda()
     model = torch.nn.DataParallel(model)
 
-    args.encoder_specs.update({"latent_size": args.code_length})
-    encoder = DIEncoder(**args.encoder_specs, mode='train').cuda()
+    encoder = DIEncoder().cuda()
     encoder = torch.nn.DataParallel(encoder)
 
     lif_dataset = ldata.LifCombinedDataset(*[
