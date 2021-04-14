@@ -1,41 +1,59 @@
-import torch.nn as nn
-import torch
-import torch.nn.functional as F
+import math
+import jittor as jt
+import jittor.nn as nn
+
+
+class WNLinear(nn.Module):
+    def __init__(self, in_features, out_features, bias=True):
+        super(WNLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight_v = nn.init.invariant_uniform((out_features, in_features), "float32")
+        self.weight_g = jt.norm(self.weight_v, k=2, dim=1, keepdim=True)
+        bound = 1.0 / math.sqrt(in_features)
+        self.bias = nn.init.uniform((out_features,), "float32", -bound, bound) if bias else None
+
+    def execute(self, x):
+        weight = self.weight_g * (self.weight_v / jt.norm(self.weight_v, k=2, dim=1, keepdim=True))
+        x = nn.matmul_transpose(x, weight)
+        if self.bias is not None:
+            return x + self.bias
+        return x
 
 
 class DIDecoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.lin0 = nn.utils.weight_norm(nn.Linear(32, 128))
-        self.lin1 = nn.utils.weight_norm(nn.Linear(128, 128))
-        self.lin2 = nn.utils.weight_norm(nn.Linear(128, 128 - 32))
-        self.lin3 = nn.utils.weight_norm(nn.Linear(128, 128))
-        self.lin4 = nn.utils.weight_norm(nn.Linear(128, 1))
+        self.lin0 = WNLinear(32, 128)
+        self.lin1 = WNLinear(128, 128)
+        self.lin2 = WNLinear(128, 128 - 32)
+        self.lin3 = WNLinear(128, 128)
+        self.lin4 = WNLinear(128, 1)
         self.uncertainty_layer = nn.Linear(128, 1)
         self.relu = nn.ReLU()
         self.dropout = [0, 1, 2, 3, 4, 5]
         self.th = nn.Tanh()
 
-    def forward(self, ipt):
+    def execute(self, ipt):
         x = self.lin0(ipt)
         x = self.relu(x)
-        x = F.dropout(x, p=0.2, training=True)
+        x = nn.dropout(x, p=0.2, is_train=True)
 
         x = self.lin1(x)
         x = self.relu(x)
-        x = F.dropout(x, p=0.2, training=True)
+        x = nn.dropout(x, p=0.2, is_train=True)
 
         x = self.lin2(x)
         x = self.relu(x)
-        x = F.dropout(x, p=0.2, training=True)
+        x = nn.dropout(x, p=0.2, is_train=True)
 
-        x = torch.cat([x, ipt], 1)
+        x = jt.contrib.concat([x, ipt], 1)
         x = self.lin3(x)
         x = self.relu(x)
-        x = F.dropout(x, p=0.2, training=True)
+        x = nn.dropout(x, p=0.2, is_train=True)
 
         std = self.uncertainty_layer(x)
-        std = 0.05 + 0.5 * F.softplus(std)
+        std = 0.05 + 0.5 * nn.softplus(std)
         x = self.lin4(x)
         x = self.th(x)
 
@@ -46,14 +64,14 @@ class DIEncoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Conv1d(6, 32, kernel_size=1, bias=False), nn.BatchNorm1d(32), nn.ReLU(inplace=True),
-            nn.Conv1d(32, 64, kernel_size=1, bias=False), nn.BatchNorm1d(64), nn.ReLU(inplace=True),
-            nn.Conv1d(64, 256, kernel_size=1, bias=False), nn.BatchNorm1d(256), nn.ReLU(inplace=True),
-            nn.Conv1d(256, 29, kernel_size=1, bias=False)
+            nn.Conv1d(6, 32, kernel_size=1, bias=False), nn.BatchNorm1d(32), nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=1, bias=False), nn.BatchNorm1d(64), nn.ReLU(),
+            nn.Conv1d(64, 256, kernel_size=1, bias=False), nn.BatchNorm1d(256), nn.ReLU(),
+            nn.Conv1d(256, 29, kernel_size=1, bias=True)
         )
 
-    def forward(self, x):
-        x = x.transpose(-1, -2)
-        x = self.mlp(x)     # (B, L, N)
-        r = torch.mean(x, dim=-1)
+    def execute(self, x):
+        x = x.transpose([0, 2, 1])
+        x = self.mlp(x)  # (B, L, N)
+        r = jt.mean(x, dim=-1)
         return r

@@ -226,31 +226,3 @@ def init_seed(seed=0):
     # torch.manual_seed(seed)
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
-
-
-class CombinedChunkLoss:
-    def __init__(self):
-        self.loss_dict = None
-        self.loss_sum_dict = None
-        self.clear()
-
-    def add_loss(self, name, val):
-        self.loss_dict[name] = val
-        self.loss_sum_dict[name] += val.item()
-
-    def update_loss_dict(self, loss_dict: dict):
-        for l_name, l_val in loss_dict.items():
-            self.add_loss(l_name, l_val)
-
-    def get_total_loss(self):
-        # Note: to reduce memory, we need to clear the referenced graph.
-        total_loss = sum(self.loss_dict.values())
-        self.loss_dict = {}
-        return total_loss
-
-    def get_accumulated_loss_dict(self):
-        return self.loss_sum_dict
-
-    def clear(self):
-        self.loss_dict = {}
-        self.loss_sum_dict = defaultdict(float)
